@@ -1,0 +1,22 @@
+syntax = "proto3";
+
+option go_package = "./pb";
+
+message HelloRequest {
+  string name = 1;
+}
+
+message HelloResponse {
+  string msg = 1;
+}
+
+// A RouteNote is a message sent while at a given point.
+message Note {
+  // The message to be sent.
+  string message = 1;
+}
+
+service HelloService {
+  rpc Hello(HelloRequest) returns (HelloResponse) {};
+  rpc Chat(stream Note) returns (stream Note) {}
+}
