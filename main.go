@@ -1,10 +1,15 @@
 package main
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"grpc-golang/pb"
 	"io"
 	"log"
+	"net/http"
+	"sync"
+	"time"
 
 	"google.golang.org/grpc"
 )
@@ -17,10 +22,25 @@ func main() {
 
 	defer connection.Close()
 
-	client := pb.NewHelloServiceClient(connection)
+	// notes := []*pb.Note{
+	// 	{Message: "First message"},
+	// 	{Message: "Second message"},
+	// 	{Message: "Third message"},
+	// 	{Message: "Fourth message"},
+	// 	{Message: "Fifth message"},
+	// 	{Message: "Sixth message"},
+	// }
 
-	// Hello(client)
-	runRouteChat(client)
+	notes := []*pb.Note{
+		{Message: "Test message"},
+	}
+
+	log.SetFlags(log.LstdFlags | log.Lmicroseconds)
+
+	client := pb.NewHelloServiceClient(connection)
+	runGRPCChat(client, notes)
+
+	runRESTChat(notes)
 }
 
 func Hello(client pb.HelloServiceClient) {
@@ -36,16 +56,7 @@ func Hello(client pb.HelloServiceClient) {
 	log.Println(res.Msg)
 }
 
-// runRouteChat receives a sequence of route notes, while sending notes for various locations.
-func runRouteChat(client pb.HelloServiceClient) {
-	notes := []*pb.Note{
-		{Message: "First message"},
-		{Message: "Second message"},
-		{Message: "Third message"},
-		{Message: "Fourth message"},
-		{Message: "Fifth message"},
-		{Message: "Sixth message"},
-	}
+func runGRPCChat(client pb.HelloServiceClient, notes []*pb.Note) {
 	// ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -55,10 +66,11 @@ func runRouteChat(client pb.HelloServiceClient) {
 	}
 	waitc := make(chan struct{})
 	msgReceived := 0
+	start := time.Now()
 
 	go func() {
 		for {
-			in, err := stream.Recv()
+			_, err := stream.Recv()
 			if err == io.EOF {
 				// read done.
 				close(waitc)
@@ -67,18 +79,48 @@ func runRouteChat(client pb.HelloServiceClient) {
 			if err != nil {
 				log.Fatalf("Failed to receive a note : %v", err)
 			}
-			log.Printf("Got message %s", in.Message)
+			// log.Printf("Got message %s", in.Message)
 			msgReceived++
 
-			if msgReceived == len(notes) {
+			if msgReceived >= 1000 {
 				stream.CloseSend()
 			}
 		}
 	}()
-	for _, note := range notes {
-		if err := stream.Send(note); err != nil {
+	// for _, note := range notes {
+	for i := 0; i < 1000; i++ {
+		if err := stream.Send(notes[0]); err != nil {
 			log.Fatalf("Failed to send a note: %v", err)
 		}
 	}
 	<-waitc
+	log.Println(time.Since(start))
+}
+
+func runRESTChat(notes []*pb.Note) {
+	waitg := sync.WaitGroup{}
+	start := time.Now()
+
+	for i := 0; i < 1000; i++ {
+		waitg.Add(1)
+
+		go func() {
+			postTest(notes)
+			waitg.Done()
+		}()
+	}
+	waitg.Wait()
+	log.Println(time.Since(start))
+}
+
+func postTest(notes []*pb.Note) {
+	url := "http://localhost:3003"
+	jsonValue, _ := json.Marshal(notes[0])
+
+	_, err := http.Post(url, "json", bytes.NewBuffer(jsonValue))
+	if err != nil {
+		log.Println("falha", err)
+	}
+
+	// log.Println("response", response)
 }
